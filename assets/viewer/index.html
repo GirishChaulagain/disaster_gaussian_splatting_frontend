@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Gaussian Splat Viewer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0A0C16;
+            font-family: 'Outfit', sans-serif;
+            color: #F3F4F6;
+        }
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+        /* Glassmorphic Loader overlay */
+        #loader {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, rgba(13, 14, 21, 0.95) 0%, rgba(10, 12, 22, 0.98) 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .spinner-box {
+            width: 150px;
+            height: 150px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: transparent;
+            position: relative;
+        }
+        .configure-border-1 {
+            width: 115px;
+            height: 115px;
+            padding: 3px;
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #6366F1;
+            animation: configure-xclock 3s ease-in-out infinite alternate;
+            border-radius: 50% 20% 50% 20%;
+            opacity: 0.8;
+            box-shadow: 0 0 25px rgba(99, 102, 241, 0.4);
+        }
+        .configure-border-2 {
+            width: 115px;
+            height: 115px;
+            padding: 3px;
+            left: 17px;
+            top: 17px;
+            position: absolute;
+            transform: rotate(45deg);
+            background: #A855F7;
+            animation: configure-clock 3s ease-in-out infinite alternate;
+            border-radius: 20% 50% 20% 50%;
+            opacity: 0.6;
+            box-shadow: 0 0 25px rgba(168, 85, 247, 0.3);
+        }
+        .configure-core {
+            width: 100%;
+            height: 100%;
+            background-color: #0d0e15;
+            border-radius: 50%;
+        }
+        .loader-text {
+            margin-top: 2rem;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            background: linear-gradient(to right, #FFFFFF, #A5B4FC);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+        }
+        .loader-percentage {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #6366F1;
+            margin-top: 0.5rem;
+            text-shadow: 0 0 15px rgba(99, 102, 241, 0.5);
+        }
+        .loader-subtext {
+            color: #9CA3AF;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            max-width: 250px;
+            text-align: center;
+            line-height: 1.4;
+        }
+        /* Top Overlay info */
+        #info-overlay {
+            position: absolute;
+            top: 1.25rem;
+            left: 1.25rem;
+            background: rgba(26, 29, 50, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.75rem;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #info-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 0.15rem;
+        }
+        #info-stats {
+            font-size: 0.75rem;
+            color: #9CA3AF;
+            font-family: monospace;
+        }
+        /* Error view */
+        #error-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0A0C16;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 150;
+            padding: 2rem;
+            text-align: center;
+        }
+        .error-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #EF4444;
+            margin-bottom: 1rem;
+        }
+        .error-message {
+            color: #9CA3AF;
+            max-width: 400px;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+        /* Animation keyframes */
+        @keyframes configure-xclock {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes configure-clock {
+            0% { transform: rotate(45deg); }
+            100% { transform: rotate(-315deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner-box">
+            <div class="configure-border-1"><div class="configure-core"></div></div>
+            <div class="configure-border-2"><div class="configure-core"></div></div>
+        </div>
+        <div class="loader-text">STREAMING 3D GAUSSIAN SPLAT</div>
+        <div class="loader-percentage" id="load-pct">0%</div>
+        <div class="loader-subtext" id="load-subtext">Initializing WebGL graphics context...</div>
+    </div>
+
+    <div id="info-overlay">
+        <div id="info-title">Disaster Splat Viewer</div>
+        <div id="info-stats">Splats: Loading... | FPS: --</div>
+    </div>
+
+    <div id="error-overlay" id="error-screen">
+        <div class="error-title">Rendering Failed</div>
+        <div class="error-message" id="error-text">An unexpected error occurred while loading the 3D Gaussian Splat scene. Please ensure your device supports WebGL 2.</div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <!-- Import lightweight and standard WebGL 3D Gaussian Splat Viewer by Kevin Kwok -->
+    <script type="module">
+        import { WebGLRenderer } from 'https://cdn.jsdelivr.net/npm/@antimatter15/splat@1.0.1/build/splat.js';
+
+        const canvas = document.getElementById('canvas');
+        const loadPct = document.getElementById('load-pct');
+        const loadSubtext = document.getElementById('load-subtext');
+        const loader = document.getElementById('loader');
+        const errorOverlay = document.getElementById('error-overlay');
+        const errorText = document.getElementById('error-text');
+        const infoTitle = document.getElementById('info-title');
+        const infoStats = document.getElementById('info-stats');
+
+        let renderer = null;
+        let splatUrl = '';
+        let calibration = {
+            roll: 0.0,
+            pitch: 0.0,
+            yaw: 0.0,
+            scale_x: 1.0,
+            scale_y: 1.0,
+            scale_z: 1.0
+        };
+
+        // Extract parameters from URL query string
+        function getQueryParam(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        // Initialize scene
+        async function init() {
+            splatUrl = getQueryParam('url');
+            const title = getQueryParam('title') || 'Disaster Splat Scene';
+            
+            infoTitle.textContent = title;
+
+            if (!splatUrl) {
+                showError("No splat file URL was provided. Please configure a valid asset path.");
+                return;
+            }
+
+            // Extract orientation parameters if present
+            calibration.roll = parseFloat(getQueryParam('roll') || '0.0');
+            calibration.pitch = parseFloat(getQueryParam('pitch') || '0.0');
+            calibration.yaw = parseFloat(getQueryParam('yaw') || '0.0');
+            calibration.scale_x = parseFloat(getQueryParam('scale_x') || '1.0');
+            calibration.scale_y = parseFloat(getQueryParam('scale_y') || '1.0');
+            calibration.scale_z = parseFloat(getQueryParam('scale_z') || '1.0');
+
+            try {
+                loadSubtext.textContent = "Requesting binary splat packets from server...";
+                
+                // Initialize the Antimatter15 high-performance WebGL Gaussian Splat Renderer
+                renderer = new WebGLRenderer(canvas);
+
+                // Set initial orientation configuration
+                applyCalibration();
+
+                // Load the .splat / .ply model with progress tracking
+                await renderer.load(splatUrl, (progress) => {
+                    const percentage = Math.min(Math.round(progress * 100), 99);
+                    loadPct.textContent = percentage + "%";
+                    loadSubtext.textContent = `Downloaded ${(progress * 100).toFixed(0)}% of model file...`;
+                });
+
+                // Hide loader
+                loadPct.textContent = "100%";
+                loadSubtext.textContent = "Assembling 3D Gaussians...";
+                
+                setTimeout(() => {
+                    loader.style.opacity = '0';
+                    setTimeout(() => {
+                        loader.style.display = 'none';
+                    }, 800);
+                }, 500);
+
+                // Start animation render loop and display stats
+                const splatCount = renderer.splatCount || 0;
+                infoStats.textContent = `Splats: ${splatCount.toLocaleString()} | FPS: 60`;
+
+                // Setup dynamic FPS reporting in the render loop
+                let lastTime = performance.now();
+                let frameCount = 0;
+                
+                renderer.onFrame = () => {
+                    frameCount++;
+                    const time = performance.now();
+                    if (time >= lastTime + 1000) {
+                        const fps = Math.round((frameCount * 1000) / (time - lastTime));
+                        infoStats.textContent = `Splats: ${splatCount.toLocaleString()} | FPS: ${fps}`;
+                        frameCount = 0;
+                        lastTime = time;
+                    }
+                };
+
+            } catch (err) {
+                console.error("WebGL Splat Rendering Error:", err);
+                showError("Failed to render 3D Gaussian Splatting scene. Error: " + err.message);
+            }
+        }
+
+        function showError(msg) {
+            loader.style.display = 'none';
+            errorOverlay.style.display = 'flex';
+            errorText.textContent = msg;
+        }
+
+        // Apply orientation/scale multipliers from calibration variables
+        function applyCalibration() {
+            if (!renderer) return;
+            
+            // Map Pitch, Yaw, Roll and Scale matrices to the renderer scene nodes
+            // In Antimatter15's library, we can adjust the camera transform, 
+            // or the base coordinate system translation/rotations of the splat mesh.
+            
+            // To provide a consistent experience, we apply Euler rotations (converted to radians)
+            // and scale factors directly to the rendering environment coordinate system.
+            const rollRad = (calibration.roll * Math.PI) / 180;
+            const pitchRad = (calibration.pitch * Math.PI) / 180;
+            const yawRad = (calibration.yaw * Math.PI) / 180;
+
+            // Update mesh transformation properties inside WebGL renderer
+            if (renderer.setRotation) {
+                renderer.setRotation(pitchRad, yawRad, rollRad);
+            }
+            if (renderer.setScale) {
+                renderer.setScale(calibration.scale_x, calibration.scale_y, calibration.scale_z);
+            }
+        }
+
+        // Define API callbacks that Flutter WebView controller can invoke directly
+        window.updateCalibration = function(roll, pitch, yaw, sx, sy, sz) {
+            calibration.roll = parseFloat(roll);
+            calibration.pitch = parseFloat(pitch);
+            calibration.yaw = parseFloat(yaw);
+            calibration.scale_x = parseFloat(sx);
+            calibration.scale_y = parseFloat(sy);
+            calibration.scale_z = parseFloat(sz);
+            
+            applyCalibration();
+            
+            if (renderer && renderer.requestRender) {
+                renderer.requestRender();
+            }
+        };
+
+        // Boot
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
