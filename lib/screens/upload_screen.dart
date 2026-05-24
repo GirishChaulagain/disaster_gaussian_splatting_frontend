@@ -4,11 +4,15 @@ import 'package:file_picker/file_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/api_service.dart';
 import '../widgets/glassmorphic_card.dart';
+import 'camera_capture_screen.dart';
 import 'jobs_screen.dart';
 import 'library_screen.dart';
 
 class UploadScreen extends StatefulWidget {
-  const UploadScreen({super.key});
+  /// Optional pre-captured video file (from camera FAB flow)
+  final File? preCapturedVideo;
+
+  const UploadScreen({super.key, this.preCapturedVideo});
 
   @override
   State<UploadScreen> createState() => _UploadScreenState();
@@ -39,6 +43,16 @@ class _UploadScreenState extends State<UploadScreen> {
 
   final List<String> _disasterTypes = ['landslide', 'flood', 'wildfire', 'earthquake', 'other'];
   final List<String> _severities = ['low', 'medium', 'high', 'critical'];
+
+  @override
+  void initState() {
+    super.initState();
+    // Handle pre-captured video from camera FAB flow
+    if (widget.preCapturedVideo != null) {
+      _selectedFile = widget.preCapturedVideo;
+      _selectedFileName = widget.preCapturedVideo!.path.split('/').last;
+    }
+  }
 
   @override
   void dispose() {
@@ -96,7 +110,22 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  // Integrates file picker
+  /// Launch native camera for video recording
+  Future<void> _captureFromCamera() async {
+    final File? capturedFile = await Navigator.push<File>(
+      context,
+      MaterialPageRoute(builder: (context) => const CameraCaptureScreen()),
+    );
+
+    if (capturedFile != null && mounted) {
+      setState(() {
+        _selectedFile = capturedFile;
+        _selectedFileName = capturedFile.path.split('/').last;
+      });
+    }
+  }
+
+  /// Pick file from gallery/filesystem
   Future<void> _pickAssetFile() async {
     try {
       final allowedExtensions = _activeTab == 0
@@ -132,7 +161,7 @@ class _UploadScreenState extends State<UploadScreen> {
     if (_selectedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_activeTab == 0 ? 'Please select an MP4/MOV video first' : 'Please select a .splat/.ply model first'),
+          content: Text(_activeTab == 0 ? 'Please capture or select a video first' : 'Please select a .splat/.ply model first'),
           backgroundColor: const Color(0xFFF59E0B),
         ),
       );
@@ -141,7 +170,7 @@ class _UploadScreenState extends State<UploadScreen> {
 
     setState(() {
       _isUploading = true;
-      _uploadProgress = 0.2; // Simulating initial buffer
+      _uploadProgress = 0.2;
     });
 
     try {
@@ -175,15 +204,12 @@ class _UploadScreenState extends State<UploadScreen> {
           ),
         );
 
-        // Direct handoff to the Celery Job tracking queue monitor screen
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const JobsScreen()),
         );
-
       } else {
         // --- STAGE 1: Direct Splat Ingestion ---
-        // 1. Create shell metadata metadata
         final splat = await _api.createSplatMetadata(
           title: _titleController.text.trim(),
           description: _descController.text.trim(),
@@ -194,7 +220,6 @@ class _UploadScreenState extends State<UploadScreen> {
           altitude: alt,
         );
 
-        // 2. Upload asset binary directly to shell
         await _api.uploadDirectSplatFile(splat.id, _selectedFile!);
 
         setState(() {
@@ -270,7 +295,7 @@ class _UploadScreenState extends State<UploadScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Ingestion Influx',
+                                'Capture & Upload',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 24,
@@ -279,14 +304,14 @@ class _UploadScreenState extends State<UploadScreen> {
                               ),
                               SizedBox(height: 2),
                               Text(
-                                'Submit drone clip or direct 3D mesh',
+                                'Record video or upload 3D model',
                                 style: TextStyle(color: Colors.white54, fontSize: 12),
                               ),
                             ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 24),
 
                       // Segmented Mode Selectors
                       Container(
@@ -318,13 +343,13 @@ class _UploadScreenState extends State<UploadScreen> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Icon(
-                                        Icons.video_call_outlined,
+                                        Icons.videocam_rounded,
                                         size: 18,
                                         color: _activeTab == 0 ? const Color(0xFF34D399) : Colors.white60,
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        'Reconstruct Video',
+                                        'Video Capture',
                                         style: TextStyle(
                                           color: _activeTab == 0 ? Colors.white : Colors.white60,
                                           fontWeight: FontWeight.bold,
@@ -377,9 +402,18 @@ class _UploadScreenState extends State<UploadScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 24),
 
-                      // Ingestion Form Panel
+                      // ========== MEDIA CAPTURE SECTION (Camera-First) ==========
+                      if (_activeTab == 0) ...[
+                        _buildVideoMediaSection(accentColor),
+                      ] else ...[
+                        _buildDirectSplatSection(accentColor),
+                      ],
+
+                      const SizedBox(height: 24),
+
+                      // ========== FORM FIELDS ==========
                       GlassmorphicCard(
                         borderColor: accentColor.withValues(alpha: 0.2),
                         padding: const EdgeInsets.all(20.0),
@@ -513,7 +547,6 @@ class _UploadScreenState extends State<UploadScreen> {
                                     letterSpacing: 0.1,
                                   ),
                                 ),
-                                // GPS Autofill trigger Button
                                 TextButton.icon(
                                   style: TextButton.styleFrom(
                                     foregroundColor: const Color(0xFFA5B4FC),
@@ -600,116 +633,52 @@ class _UploadScreenState extends State<UploadScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 25),
-
-                            const Divider(color: Colors.white10),
-                            const SizedBox(height: 15),
-
-                            // File selection Area
-                            const Text(
-                              'BINARY INGESTION ASSET',
-                              style: TextStyle(
-                                color: Colors.white38,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.1,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-
-                            GestureDetector(
-                              onTap: _pickAssetFile,
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                                decoration: BoxDecoration(
-                                  color: Colors.black26,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: accentColor.withValues(alpha: 0.3)),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      _activeTab == 0 ? Icons.video_library_outlined : Icons.view_in_ar_outlined,
-                                      size: 32,
-                                      color: accentColor,
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      _selectedFileName ?? (_activeTab == 0 ? 'Click to select MP4, MOV, or AVI' : 'Click to select .splat or .ply file'),
-                                      style: TextStyle(
-                                        color: _selectedFileName != null ? Colors.white : Colors.white38,
-                                        fontSize: 12,
-                                        fontWeight: _selectedFileName != null ? FontWeight.bold : FontWeight.normal,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    if (_selectedFile != null) ...[
-                                      const SizedBox(height: 6),
-                                      FutureBuilder<int>(
-                                        future: _selectedFile!.length(),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.hasData) {
-                                            final mb = snapshot.data! / (1024 * 1024);
-                                            return Text(
-                                              'Size: ${mb.toStringAsFixed(2)} MB',
-                                              style: const TextStyle(color: Colors.white30, fontSize: 11),
-                                            );
-                                          }
-                                          return const SizedBox.shrink();
-                                        },
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 30),
-
-                            // Submit Button
-                            SizedBox(
-                              width: double.infinity,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: accentColor.withValues(alpha: 0.3),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
-                                ),
-                                child: ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: accentColor,
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                    elevation: 0,
-                                  ),
-                                  onPressed: _isUploading ? null : _submitIngestion,
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        _activeTab == 0 ? Icons.cloud_upload_outlined : Icons.add_circle_outline,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _activeTab == 0 ? 'TRIGGER AI RECONSTRUCTION' : 'INGEST & SAVE 3D SPLAT',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 0.05,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Submit Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accentColor.withValues(alpha: 0.3),
+                                blurRadius: 15,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: accentColor,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              elevation: 0,
+                            ),
+                            onPressed: _isUploading ? null : _submitIngestion,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _activeTab == 0 ? Icons.cloud_upload_outlined : Icons.add_circle_outline,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _activeTab == 0 ? 'TRIGGER AI RECONSTRUCTION' : 'INGEST & SAVE 3D SPLAT',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.05,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 40),
@@ -767,6 +736,267 @@ class _UploadScreenState extends State<UploadScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Camera-first video media source section
+  Widget _buildVideoMediaSection(Color accentColor) {
+    return GlassmorphicCard(
+      borderColor: accentColor.withValues(alpha: 0.2),
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'VIDEO SOURCE',
+            style: TextStyle(
+              color: Colors.white38,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.1,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Primary CTA: Camera Record Button
+          SizedBox(
+            width: double.infinity,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                    blurRadius: 15,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A1A2E),
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: const Color(0xFFEF4444).withValues(alpha: 0.4)),
+                  ),
+                  elevation: 0,
+                ),
+                onPressed: _captureFromCamera,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2.5),
+                      ),
+                      child: Center(
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEF4444),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Record Video',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Use camera to capture disaster footage',
+                          style: TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Secondary: Gallery Picker
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white70,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                side: const BorderSide(color: Colors.white12),
+              ),
+              onPressed: _pickAssetFile,
+              icon: const Icon(Icons.photo_library_outlined, size: 18),
+              label: const Text(
+                'Choose from Gallery',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Selected File Preview
+          if (_selectedFile != null) _buildFilePreview(accentColor),
+        ],
+      ),
+    );
+  }
+
+  /// Direct PLY/SPLAT file selection section
+  Widget _buildDirectSplatSection(Color accentColor) {
+    return GlassmorphicCard(
+      borderColor: accentColor.withValues(alpha: 0.2),
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'BINARY INGESTION ASSET',
+            style: TextStyle(
+              color: Colors.white38,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.1,
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _pickAssetFile,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.view_in_ar_outlined,
+                    size: 32,
+                    color: accentColor,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _selectedFileName ?? 'Click to select .splat or .ply file',
+                    style: TextStyle(
+                      color: _selectedFileName != null ? Colors.white : Colors.white38,
+                      fontSize: 12,
+                      fontWeight: _selectedFileName != null ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (_selectedFile != null) ...[
+                    const SizedBox(height: 6),
+                    FutureBuilder<int>(
+                      future: _selectedFile!.length(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasData) {
+                          final mb = snapshot.data! / (1024 * 1024);
+                          return Text(
+                            'Size: ${mb.toStringAsFixed(2)} MB',
+                            style: const TextStyle(color: Colors.white30, fontSize: 11),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// File preview widget showing selected/captured file info
+  Widget _buildFilePreview(Color accentColor) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accentColor.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.videocam_rounded, color: accentColor, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _selectedFileName ?? 'Unknown',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                FutureBuilder<int>(
+                  future: _selectedFile!.length(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData) {
+                      final mb = snapshot.data! / (1024 * 1024);
+                      return Text(
+                        '${mb.toStringAsFixed(2)} MB • Ready to upload',
+                        style: TextStyle(color: accentColor, fontSize: 11),
+                      );
+                    }
+                    return const Text(
+                      'Calculating size...',
+                      style: TextStyle(color: Colors.white38, fontSize: 11),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          // Remove file button
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _selectedFile = null;
+                _selectedFileName = null;
+              });
+            },
+            icon: const Icon(Icons.close, color: Colors.white38, size: 18),
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white.withValues(alpha: 0.05),
+              padding: const EdgeInsets.all(6),
+            ),
+          ),
+        ],
       ),
     );
   }

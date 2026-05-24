@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/glassmorphic_card.dart';
+import 'camera_capture_screen.dart';
 import 'map_screen.dart';
 import 'upload_screen.dart';
 import 'jobs_screen.dart';
@@ -382,6 +384,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final navigator = Navigator.of(context);
+          final File? video = await Navigator.push<File>(
+            context,
+            MaterialPageRoute(builder: (context) => const CameraCaptureScreen()),
+          );
+          if (video != null && mounted) {
+            navigator.push(
+              MaterialPageRoute(
+                builder: (context) => UploadScreen(preCapturedVideo: video),
+              ),
+            );
+          }
+        },
+        backgroundColor: const Color(0xFFEF4444),
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Icon(Icons.videocam_rounded),
       ),
     );
   }
